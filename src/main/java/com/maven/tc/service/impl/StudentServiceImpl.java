@@ -1,15 +1,26 @@
 package com.maven.tc.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.maven.tc.dto.RegisterDTO;
+import com.maven.tc.dto.UpdateStudentDTO;
+import com.maven.tc.entity.Admission;
 import com.maven.tc.entity.InterviewResult;
+import com.maven.tc.entity.SecondInterview;
 import com.maven.tc.entity.Student;
+import com.maven.tc.entity.WalkInInterview;
+import com.maven.tc.mapper.AdmissionMapper;
 import com.maven.tc.mapper.InterviewResultMapper;
+import com.maven.tc.mapper.SecondInterviewMapper;
 import com.maven.tc.mapper.StudentMapper;
+import com.maven.tc.mapper.WalkInInterviewMapper;
 import com.maven.tc.service.StudentService;
 import com.maven.tc.vo.InterviewResultVO;
+import com.maven.tc.vo.SecondInterviewVO;
 import com.maven.tc.vo.StudentVO;
+import com.maven.tc.vo.WalkInInterviewVO;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -23,7 +34,17 @@ public class StudentServiceImpl extends ServiceImpl<StudentMapper, Student> impl
     @Autowired
     private InterviewResultMapper interviewResultMapper;
 
+    @Autowired
+    private SecondInterviewMapper secondInterviewMapper;
+
+    @Autowired
+    private WalkInInterviewMapper walkInInterviewMapper;
+
+    @Autowired
+    private AdmissionMapper admissionMapper;
+
     @Override
+    //学生注册
     public StudentVO register(RegisterDTO dto) {
         if (dto.getName() == null || dto.getName().isEmpty()) {
             throw new RuntimeException("姓名不能为空");
@@ -63,6 +84,7 @@ public class StudentServiceImpl extends ServiceImpl<StudentMapper, Student> impl
     }
 
     @Override
+    //学生登录
     public StudentVO login(String studentId, String password) {
         LambdaQueryWrapper<Student> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Student::getStudentId, studentId)
@@ -77,6 +99,34 @@ public class StudentServiceImpl extends ServiceImpl<StudentMapper, Student> impl
     }
 
     @Override
+    //查看注册学生
+    public IPage<StudentVO> getStudents(Integer current, Integer size) {
+        Page<Student> page = new Page<>(current, size);
+        Page<Student> resultPage = this.page(page);
+        return resultPage.convert(student -> {
+            StudentVO vo = new StudentVO();
+            BeanUtils.copyProperties(student, vo);
+            return vo;
+        });
+    }
+
+    @Override
+    //修改学生信息
+    public void updateStudent(Long id, UpdateStudentDTO dto) {
+        Student student = new Student();
+        student.setId(id);
+        BeanUtils.copyProperties(dto, student);
+        this.updateById(student);
+    }
+
+    @Override
+    public void deleteStudent(Long id) {
+        this.removeById(id);
+
+    }
+
+    @Override
+    //查看学生面试结果
     public InterviewResultVO getInterviewResult(String studentId) {
         LambdaQueryWrapper<InterviewResult> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(InterviewResult::getStudentId, studentId);
@@ -85,6 +135,60 @@ public class StudentServiceImpl extends ServiceImpl<StudentMapper, Student> impl
             return null;
         }
         InterviewResultVO vo = new InterviewResultVO();
+        BeanUtils.copyProperties(result, vo);
+        
+        LambdaQueryWrapper<SecondInterview> secondWrapper = new LambdaQueryWrapper<>();
+        secondWrapper.eq(SecondInterview::getStudentId, studentId);
+        SecondInterview secondResult = secondInterviewMapper.selectOne(secondWrapper);
+        if (secondResult != null) {
+            vo.setSecondStatus(secondResult.getStatus());
+            vo.setSecondRemark(secondResult.getRemark());
+        }
+        
+        LambdaQueryWrapper<WalkInInterview> walkInWrapper = new LambdaQueryWrapper<>();
+        walkInWrapper.eq(WalkInInterview::getStudentId, studentId);
+        WalkInInterview walkInResult = walkInInterviewMapper.selectOne(walkInWrapper);
+        if (walkInResult != null) {
+            vo.setWalkInStatus(walkInResult.getStatus());
+            vo.setWalkInRemark(walkInResult.getRemark());
+        }
+        
+        LambdaQueryWrapper<Admission> admissionWrapper = new LambdaQueryWrapper<>();
+        admissionWrapper.eq(Admission::getStudentId, studentId);
+        Admission admissionResult = admissionMapper.selectOne(admissionWrapper);
+        if (admissionResult != null) {
+            vo.setAdmitted(true);
+        } else {
+            vo.setAdmitted(false);
+        }
+        
+        return vo;
+    }
+
+    @Override
+    //学生查看二面结果
+    public SecondInterviewVO getSecondInterviewResult(String studentId) {
+        LambdaQueryWrapper<SecondInterview> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(SecondInterview::getStudentId, studentId);
+        SecondInterview result = secondInterviewMapper.selectOne(wrapper);
+        if (result == null) {
+            return null;
+        }
+        SecondInterviewVO vo = new SecondInterviewVO();
+        BeanUtils.copyProperties(result, vo);
+        return vo;
+    }
+
+    @Override
+    //学生查看霸面结果
+    public WalkInInterviewVO getWalkInInterviewResult(String studentId) {
+        LambdaQueryWrapper<WalkInInterview> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(WalkInInterview::getStudentId, studentId);
+        WalkInInterview result = walkInInterviewMapper.selectOne(wrapper);
+        if (result == null) {
+            return null;
+        }
+        WalkInInterviewVO vo = new WalkInInterviewVO();
         BeanUtils.copyProperties(result, vo);
         return vo;
     }
@@ -150,5 +254,44 @@ public class StudentServiceImpl extends ServiceImpl<StudentMapper, Student> impl
         data.put("全栈开发", fullstack);
         data.put("安卓开发", android);
         return data;
+    }
+
+    @Override
+    //学生重置密码
+    public boolean resetPassword(String studentId, String newPassword) {
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new RuntimeException("密码长度不能小于6位");
+        }
+
+        LambdaQueryWrapper<Student> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Student::getStudentId, studentId);
+        Student student = this.getOne(wrapper);
+        
+        if (student == null) {
+            throw new RuntimeException("该学号未注册");
+        }
+
+        student.setPassword(newPassword);
+        return this.updateById(student);
+    }
+
+    @Override
+    //学生修改密码
+    public boolean updatePassword(String studentId, String oldPassword, String newPassword) {
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new RuntimeException("新密码长度不能小于6位");
+        }
+
+        LambdaQueryWrapper<Student> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Student::getStudentId, studentId)
+                .eq(Student::getPassword, oldPassword);
+        Student student = this.getOne(wrapper);
+        
+        if (student == null) {
+            throw new RuntimeException("旧密码错误");
+        }
+
+        student.setPassword(newPassword);
+        return this.updateById(student);
     }
 }
